@@ -47,7 +47,7 @@
         <!-- Top Metric Cards Grid -->
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
             
-            <!-- Card 1: Total Bags -->
+            <!-- Card 1: Total Bags (DITAMBAH BUTANG RESET DI SINI) -->
             <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-between hover:shadow-md transition">
                 <div class="flex justify-between items-start">
                     <div>
@@ -58,9 +58,16 @@
                         <i data-lucide="package-check" class="w-6 h-6 text-emerald-600"></i>
                     </div>
                 </div>
-                <div class="mt-4 pt-3 border-t border-slate-100 text-xs text-slate-500 flex items-center gap-1">
-                    <i data-lucide="check-circle-2" class="w-3.5 h-3.5 text-emerald-500"></i>
-                    <span>Tercetus via Limit Switch</span>
+                <div class="mt-4 pt-3 border-t border-slate-100 flex flex-col gap-2">
+                    <div class="text-xs text-slate-500 flex items-center gap-1">
+                        <i data-lucide="check-circle-2" class="w-3.5 h-3.5 text-emerald-500"></i>
+                        <span>Tercetus via Limit Switch</span>
+                    </div>
+                    <!-- Butang Reset -->
+                    <button onclick="resetJumlahBeg()" class="mt-1 w-full py-1.5 px-3 bg-rose-500 hover:bg-rose-600 active:bg-rose-700 text-white font-medium text-xs rounded-lg transition flex items-center justify-center gap-1.5 shadow-sm">
+                        <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+                        <span>Reset Beg ke 0</span>
+                    </button>
                 </div>
             </div>
 
@@ -182,7 +189,7 @@
         import { getDatabase, ref, onValue, set } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
 
         // ==========================================
-        // 1. TETAPAN FIREBASE (MASUKKAN MAKLUMAT ANDA)
+        // 1. TETAPAN FIREBASE
         // ==========================================
         const firebaseConfig = {
             apiKey: "AIzaSyDWiNpSaAqpFaJtnRyABV7SUXwOjtyg_0o",
@@ -208,7 +215,6 @@
         // ==========================================
         // 2. TETAPAN PETA INTERAKTIF (LEAFLET)
         // ==========================================
-        // Koordinat Lalulintas Laluan Asas (Kedah / Malaysia Default)
         let defaultLat = 5.4833;
         let defaultLng = 100.5333;
 
@@ -261,6 +267,7 @@
 
                 if (data) {
                     if (data.JumlahBeg !== undefined) {
+                        simBeg = data.JumlahBeg; // Kemas kini nilai simBeg tempatan
                         document.getElementById('bag-count').innerText = data.JumlahBeg;
                     }
                     if (data.Latitud !== undefined && data.Longitud !== undefined) {
@@ -273,7 +280,7 @@
                     }
                     
                     document.getElementById('last-update').innerText = new Date().toLocaleTimeString('ms-MY');
-                    logMesej("Data diterima daripada ESP32.");
+                    logMesej("Data diterima daripada ESP32 / Firebase.");
                 }
             }, (error) => {
                 document.getElementById('status-badge').className = "px-3 py-1 text-xs font-semibold rounded-full bg-rose-500/20 text-rose-200 border border-rose-400/30 flex items-center gap-1.5";
@@ -281,7 +288,7 @@
                 logMesej("Gagal membaca Firebase: " + error.message);
             });
         } else {
-            // Mod Simulasi Tempatan (Apabila Kunci API Belum Ditetapkan)
+            // Mod Simulasi Tempatan
             document.getElementById('status-badge').className = "px-3 py-1 text-xs font-semibold rounded-full bg-blue-500/20 text-blue-200 border border-blue-400/30 flex items-center gap-1.5";
             document.getElementById('status-text').innerText = "Mod Simulasi";
             
@@ -292,11 +299,32 @@
         }
 
         // ==========================================
-        // 4. FUNGSI SIMULASI MANUAL (DEMO PROJEK)
+        // 4. FUNGSI SIMULASI & RESET
         // ==========================================
         let simBeg = 0;
         let simLat = defaultLat;
         let simLng = defaultLng;
+
+        // FUNGSI RESET JUMLAH BEG KE 0
+        window.resetJumlahBeg = function() {
+            if (confirm("Adakah anda pasti mahu menetapkan semula jumlah beg kepada 0?")) {
+                simBeg = 0;
+                document.getElementById('bag-count').innerText = 0;
+                document.getElementById('last-update').innerText = new Date().toLocaleTimeString('ms-MY');
+                logMesej("<b>[RESET]</b> Jumlah beg telah ditetapkan semula kepada 0.");
+
+                // Hantar kemas kini ke Firebase jika terhubung
+                if (isFirebaseConnected && db) {
+                    set(ref(db, 'SmartVacuum/JumlahBeg'), 0)
+                        .then(() => {
+                            console.log("Jumlah beg berjaya di-reset ke 0 di Firebase.");
+                        })
+                        .catch((error) => {
+                            alert("Gagal reset data di Firebase: " + error.message);
+                        });
+                }
+            }
+        };
 
         window.simulasiTukarBeg = function() {
             simBeg++;
@@ -311,7 +339,6 @@
         };
 
         window.simulasiGerakGPS = function() {
-            // Anjakkan koordinat sedikit secara rawak
             simLat += (Math.random() - 0.5) * 0.0015;
             simLng += (Math.random() - 0.5) * 0.0015;
             
