@@ -22,7 +22,7 @@
 
     <!-- Header Navigation -->
     <header class="bg-emerald-700 text-white shadow-lg sticky top-0 z-50">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center flex-wrap gap-3">
             <div class="flex items-center space-x-3">
                 <div class="p-2 bg-emerald-800 rounded-lg">
                     <i data-lucide="truck" class="w-6 h-6 text-emerald-200"></i>
@@ -32,10 +32,19 @@
                     <p class="text-xs text-emerald-200 hidden sm:block">Sistem Pemantauan Lokasi & Pengurusan Sisa Hijau Masa Nyata</p>
                 </div>
             </div>
-            <div class="flex items-center space-x-3">
-                <span id="status-badge" class="px-3 py-1 text-xs font-semibold rounded-full bg-amber-500/20 text-amber-200 border border-amber-400/30 flex items-center gap-1.5">
-                    <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
-                    <span id="status-text">Menyambung...</span>
+            
+            <!-- Dual Status Badges: ESP32 & GPS -->
+            <div class="flex items-center space-x-2 sm:space-x-3">
+                <!-- Status Badge 1: ESP32 -->
+                <span id="esp-status-badge" class="px-3 py-1 text-xs font-semibold rounded-full bg-amber-500/20 text-amber-200 border border-amber-400/30 flex items-center gap-1.5 transition-all">
+                    <span id="esp-status-dot" class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                    <span id="esp-status-text">Menyambung ESP32...</span>
+                </span>
+
+                <!-- Status Badge 2: GPS -->
+                <span id="gps-status-badge" class="px-3 py-1 text-xs font-semibold rounded-full bg-slate-500/20 text-slate-300 border border-slate-400/30 flex items-center gap-1.5 transition-all">
+                    <span id="gps-status-dot" class="w-2 h-2 rounded-full bg-slate-400"></span>
+                    <span id="gps-status-text">Semak GPS...</span>
                 </span>
             </div>
         </div>
@@ -197,9 +206,10 @@
             projectId: "smart-leaf-vacuum-fcc55"
         };
 
-        // Inisialisasi Firebase
         let db;
         let isFirebaseConnected = false;
+        let lastEspDataTime = 0; // Rekod masa terakhir paket diterima
+        const TIMEOUT_THRESHOLD = 10000; // 10 Saat (jika tiada data baru = Offline)
 
         try {
             const app = initializeApp(firebaseConfig);
@@ -209,7 +219,6 @@
             console.warn("Firebase belum diisikan dengan kunci sah. Menggunakan mod pengujian simulasi.");
         }
 
-        // Initialize Lucide Icons
         lucide.createIcons();
 
         // ==========================================
@@ -224,7 +233,6 @@
             attribution: '&copy; OpenStreetMap'
         }).addTo(window.map);
 
-        // Custom Marker Icon untuk Jentera Vakum
         const vacuumIcon = L.divIcon({
             html: `<div class="p-2 bg-emerald-600 text-white rounded-full shadow-lg border-2 border-white flex items-center justify-center">
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.28a1 1 0 0 0-.684-.948l-1.923-.641a1 1 0 0 1-.578-.502l-1.539-3.076A1 1 0 0 0 16.382 8H14"/><circle cx="7.5" cy="18.5" r="2.5"/><circle cx="17.5" cy="18.5" r="2.5"/></svg>
@@ -242,7 +250,6 @@
             window.map.panTo(currentPos);
         };
 
-        // Helper: Tambah Log
         function logMesej(msg) {
             const container = document.getElementById('log-container');
             const timeStr = new Date().toLocaleTimeString('ms-MY', { hour12: false });
@@ -253,7 +260,7 @@
         }
 
         // ==========================================
-        // 3. JAM MASA NYATA (LIVE CLOCK) - BERJALAN SENDIRI
+        // 3. JAM MASA NYATA (LIVE CLOCK)
         // ==========================================
         function kemaskiniJamSemasa() {
             const sekarang = new Date();
@@ -278,13 +285,57 @@
                 elemenJam.innerText = formatMasa;
             }
         }
-
-        // Jalankan jam serta-merta dan ulang setiap 1000ms (1 saat)
         kemaskiniJamSemasa();
         setInterval(kemaskiniJamSemasa, 1000);
 
         // ==========================================
-        // 4. LISTEN DATA MASUK DARI FIREBASE
+        // 4. FUNGSI UPDATE LENCANA STATUS (ESP32 & GPS)
+        // ==========================================
+        function updateEspBadge(online) {
+            const badge = document.getElementById('esp-status-badge');
+            const dot = document.getElementById('esp-status-dot');
+            const text = document.getElementById('esp-status-text');
+
+            if (online) {
+                badge.className = "px-3 py-1 text-xs font-semibold rounded-full bg-emerald-500/20 text-emerald-200 border border-emerald-400/30 flex items-center gap-1.5 transition-all";
+                dot.className = "w-2 h-2 rounded-full bg-emerald-400 animate-pulse";
+                text.innerText = "ESP32 Online";
+            } else {
+                badge.className = "px-3 py-1 text-xs font-semibold rounded-full bg-rose-500/20 text-rose-200 border border-rose-400/30 flex items-center gap-1.5 transition-all";
+                dot.className = "w-2 h-2 rounded-full bg-rose-400";
+                text.innerText = "ESP32 Terputus";
+            }
+        }
+
+        function updateGpsBadge(active) {
+            const badge = document.getElementById('gps-status-badge');
+            const dot = document.getElementById('gps-status-dot');
+            const text = document.getElementById('gps-status-text');
+
+            if (active) {
+                badge.className = "px-3 py-1 text-xs font-semibold rounded-full bg-blue-500/20 text-blue-200 border border-blue-400/30 flex items-center gap-1.5 transition-all";
+                dot.className = "w-2 h-2 rounded-full bg-blue-400 animate-pulse";
+                text.innerText = "GPS Aktif";
+            } else {
+                badge.className = "px-3 py-1 text-xs font-semibold rounded-full bg-amber-500/20 text-amber-200 border border-amber-400/30 flex items-center gap-1.5 transition-all";
+                dot.className = "w-2 h-2 rounded-full bg-amber-400";
+                text.innerText = "Tiada Isyarat GPS";
+            }
+        }
+
+        // Semak cap masa berkala setiap 2 saat untuk mengesan pemutusan sambungan
+        setInterval(() => {
+            if (lastEspDataTime > 0) {
+                const now = Date.now();
+                if (now - lastEspDataTime > TIMEOUT_THRESHOLD) {
+                    updateEspBadge(false);
+                    updateGpsBadge(false);
+                }
+            }
+        }, 2000);
+
+        // ==========================================
+        // 5. LISTEN DATA MASUK DARI FIREBASE
         // ==========================================
         if (isFirebaseConnected && firebaseConfig.apiKey !== "AIzaSy_YOUR_FIREBASE_API_KEY") {
             const dataRef = ref(db, 'SmartVacuum');
@@ -292,74 +343,75 @@
             onValue(dataRef, (snapshot) => {
                 const data = snapshot.val();
                 
-                // Set Status Live
-                document.getElementById('status-badge').className = "px-3 py-1 text-xs font-semibold rounded-full bg-emerald-500/20 text-emerald-200 border border-emerald-400/30 flex items-center gap-1.5";
-                document.getElementById('status-text').innerText = "Terhubung (Live)";
-
                 if (data) {
+                    // Rekod cap masa penerimaan data terkini dari ESP32
+                    lastEspDataTime = Date.now();
+                    updateEspBadge(true);
+
+                    // Kemas kini jumlah beg
                     if (data.JumlahBeg !== undefined) {
                         simBeg = data.JumlahBeg;
                         document.getElementById('bag-count').innerText = data.JumlahBeg;
                     }
-                    if (data.Latitud !== undefined && data.Longitud !== undefined) {
-                        document.getElementById('lat-val').innerText = data.Latitud.toFixed(6);
-                        document.getElementById('lng-val').innerText = data.Longitud.toFixed(6);
+
+                    // Semak dan Kemas Kini GPS
+                    const hasValidGps = (data.GPS_Status === true || data.GPS_Status === 1) || 
+                                        (data.Latitud !== undefined && data.Longitud !== undefined && data.Latitud !== 0 && data.Longitud !== 0);
+
+                    if (hasValidGps) {
+                        updateGpsBadge(true);
+                        document.getElementById('lat-val').innerText = Number(data.Latitud).toFixed(6);
+                        document.getElementById('lng-val').innerText = Number(data.Longitud).toFixed(6);
                         
                         const newPos = new L.LatLng(data.Latitud, data.Longitud);
                         window.marker.setLatLng(newPos);
                         window.map.panTo(newPos);
+                    } else {
+                        updateGpsBadge(false);
                     }
                     
                     logMesej("Data diterima daripada ESP32 / Firebase.");
                 }
             }, (error) => {
-                document.getElementById('status-badge').className = "px-3 py-1 text-xs font-semibold rounded-full bg-rose-500/20 text-rose-200 border border-rose-400/30 flex items-center gap-1.5";
-                document.getElementById('status-text').innerText = "Ralat Sambungan";
+                updateEspBadge(false);
+                updateGpsBadge(false);
                 logMesej("Gagal membaca Firebase: " + error.message);
             });
         } else {
             // Mod Simulasi Tempatan
-            document.getElementById('status-badge').className = "px-3 py-1 text-xs font-semibold rounded-full bg-blue-500/20 text-blue-200 border border-blue-400/30 flex items-center gap-1.5";
-            document.getElementById('status-text').innerText = "Mod Simulasi";
-            
+            updateEspBadge(true);
+            updateGpsBadge(true);
             document.getElementById('lat-val').innerText = defaultLat.toFixed(6);
             document.getElementById('lng-val').innerText = defaultLng.toFixed(6);
             logMesej("Sistem sedia. Tekan butang simulasi di bawah untuk menguji.");
         }
 
         // ==========================================
-        // 5. FUNGSI SIMULASI & RESET
+        // 6. FUNGSI SIMULASI & RESET
         // ==========================================
         let simBeg = 0;
         let simLat = defaultLat;
         let simLng = defaultLng;
 
-        // FUNGSI RESET JUMLAH BEG KE 0
         window.resetJumlahBeg = function() {
             if (confirm("Adakah anda pasti mahu menetapkan semula jumlah beg kepada 0?")) {
                 simBeg = 0;
                 document.getElementById('bag-count').innerText = 0;
                 logMesej("<b>[RESET]</b> Jumlah beg telah ditetapkan semula kepada 0.");
 
-                // Hantar kemas kini ke Firebase jika terhubung
                 if (isFirebaseConnected && db) {
-                    set(ref(db, 'SmartVacuum/JumlahBeg'), 0)
-                        .then(() => {
-                            console.log("Jumlah beg berjaya di-reset ke 0 di Firebase.");
-                        })
-                        .catch((error) => {
-                            alert("Gagal reset data di Firebase: " + error.message);
-                        });
+                    set(ref(db, 'SmartVacuum/JumlahBeg'), 0);
                 }
             }
         };
 
         window.simulasiTukarBeg = function() {
             simBeg++;
+            lastEspDataTime = Date.now();
+            updateEspBadge(true);
             document.getElementById('bag-count').innerText = simBeg;
             logMesej(`<b>[SUIS HAD]</b> Beg sisa ditukar! Jumlah kini: <b>${simBeg}</b>`);
             
-            // Hantar ke Firebase jika terhubung
             if (isFirebaseConnected && db) {
                 set(ref(db, 'SmartVacuum/JumlahBeg'), simBeg);
             }
@@ -369,6 +421,10 @@
             simLat += (Math.random() - 0.5) * 0.0015;
             simLng += (Math.random() - 0.5) * 0.0015;
             
+            lastEspDataTime = Date.now();
+            updateEspBadge(true);
+            updateGpsBadge(true);
+
             document.getElementById('lat-val').innerText = simLat.toFixed(6);
             document.getElementById('lng-val').innerText = simLng.toFixed(6);
             
@@ -378,10 +434,10 @@
             
             logMesej(`<b>[GPS]</b> Jentera bergerak -> Lat: ${simLat.toFixed(5)}, Lng: ${simLng.toFixed(5)}`);
 
-            // Hantar ke Firebase jika terhubung
             if (isFirebaseConnected && db) {
                 set(ref(db, 'SmartVacuum/Latitud'), simLat);
                 set(ref(db, 'SmartVacuum/Longitud'), simLng);
+                set(ref(db, 'SmartVacuum/GPS_Status'), true);
             }
         };
     </script>
