@@ -47,7 +47,7 @@
         <!-- Top Metric Cards Grid -->
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
             
-            <!-- Card 1: Total Bags (DITAMBAH BUTANG RESET DI SINI) -->
+            <!-- Card 1: Total Bags -->
             <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-between hover:shadow-md transition">
                 <div class="flex justify-between items-start">
                     <div>
@@ -105,12 +105,12 @@
                 </div>
             </div>
 
-            <!-- Card 4: Last Update -->
+            <!-- Card 4: Masa Kemas Kini (Jam Live) -->
             <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-between hover:shadow-md transition">
                 <div class="flex justify-between items-start">
                     <div>
                         <p class="text-xs font-medium text-slate-500 uppercase tracking-wider">Masa Kemas Kini</p>
-                        <h3 class="text-base font-semibold text-slate-700 mt-2" id="last-update">Menunggu...</h3>
+                        <h3 class="text-lg font-bold font-mono text-slate-700 mt-2" id="last-update">-- : -- : --</h3>
                     </div>
                     <div class="p-3 bg-purple-50 rounded-xl">
                         <i data-lucide="clock" class="w-6 h-6 text-purple-600"></i>
@@ -253,7 +253,38 @@
         }
 
         // ==========================================
-        // 3. LISTEN DATA MASUK DARI FIREBASE
+        // 3. JAM MASA NYATA (LIVE CLOCK) - BERJALAN SENDIRI
+        // ==========================================
+        function kemaskiniJamSemasa() {
+            const sekarang = new Date();
+            let jam = sekarang.getHours();
+            let minit = sekarang.getMinutes();
+            let saat = sekarang.getSeconds();
+
+            let penanda = "PAGI";
+            if (jam >= 12) {
+                penanda = (jam >= 19) ? "MALAM" : "PTG";
+                if (jam > 12) jam -= 12;
+            }
+            if (jam === 0) jam = 12;
+
+            jam = jam < 10 ? '0' + jam : jam;
+            minit = minit < 10 ? '0' + minit : minit;
+            saat = saat < 10 ? '0' + saat : saat;
+
+            const formatMasa = `${jam} : ${minit} : ${saat} ${penanda}`;
+            const elemenJam = document.getElementById('last-update');
+            if (elemenJam) {
+                elemenJam.innerText = formatMasa;
+            }
+        }
+
+        // Jalankan jam serta-merta dan ulang setiap 1000ms (1 saat)
+        kemaskiniJamSemasa();
+        setInterval(kemaskiniJamSemasa, 1000);
+
+        // ==========================================
+        // 4. LISTEN DATA MASUK DARI FIREBASE
         // ==========================================
         if (isFirebaseConnected && firebaseConfig.apiKey !== "AIzaSy_YOUR_FIREBASE_API_KEY") {
             const dataRef = ref(db, 'SmartVacuum');
@@ -267,7 +298,7 @@
 
                 if (data) {
                     if (data.JumlahBeg !== undefined) {
-                        simBeg = data.JumlahBeg; // Kemas kini nilai simBeg tempatan
+                        simBeg = data.JumlahBeg;
                         document.getElementById('bag-count').innerText = data.JumlahBeg;
                     }
                     if (data.Latitud !== undefined && data.Longitud !== undefined) {
@@ -279,7 +310,6 @@
                         window.map.panTo(newPos);
                     }
                     
-                    document.getElementById('last-update').innerText = new Date().toLocaleTimeString('ms-MY');
                     logMesej("Data diterima daripada ESP32 / Firebase.");
                 }
             }, (error) => {
@@ -294,12 +324,11 @@
             
             document.getElementById('lat-val').innerText = defaultLat.toFixed(6);
             document.getElementById('lng-val').innerText = defaultLng.toFixed(6);
-            document.getElementById('last-update').innerText = "Sedia (Demo)";
             logMesej("Sistem sedia. Tekan butang simulasi di bawah untuk menguji.");
         }
 
         // ==========================================
-        // 4. FUNGSI SIMULASI & RESET
+        // 5. FUNGSI SIMULASI & RESET
         // ==========================================
         let simBeg = 0;
         let simLat = defaultLat;
@@ -310,7 +339,6 @@
             if (confirm("Adakah anda pasti mahu menetapkan semula jumlah beg kepada 0?")) {
                 simBeg = 0;
                 document.getElementById('bag-count').innerText = 0;
-                document.getElementById('last-update').innerText = new Date().toLocaleTimeString('ms-MY');
                 logMesej("<b>[RESET]</b> Jumlah beg telah ditetapkan semula kepada 0.");
 
                 // Hantar kemas kini ke Firebase jika terhubung
@@ -329,7 +357,6 @@
         window.simulasiTukarBeg = function() {
             simBeg++;
             document.getElementById('bag-count').innerText = simBeg;
-            document.getElementById('last-update').innerText = new Date().toLocaleTimeString('ms-MY');
             logMesej(`<b>[SUIS HAD]</b> Beg sisa ditukar! Jumlah kini: <b>${simBeg}</b>`);
             
             // Hantar ke Firebase jika terhubung
@@ -344,7 +371,6 @@
             
             document.getElementById('lat-val').innerText = simLat.toFixed(6);
             document.getElementById('lng-val').innerText = simLng.toFixed(6);
-            document.getElementById('last-update').innerText = new Date().toLocaleTimeString('ms-MY');
             
             const newPos = new L.LatLng(simLat, simLng);
             window.marker.setLatLng(newPos);
